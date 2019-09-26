@@ -1,0 +1,18 @@
+{
+	"version": 2,
+	"builds": [
+		{"src": "www/**/*", "use": "@now/static"},
+		{"src": "api/greet.go", "use": "@now/go"},
+		{"src": "api/nic.go", "use": "@now/go"}
+
+	],
+	"routes": [
+		{ "src": "/nic/(.*)", "dest": "api/nic.go" },
+		{ "src": "/api/(.*)", "dest": "api/$1" },
+		{ "src": "/", "dest": "www/index.html" },
+		{ "src": "/(.*)", "dest": "www/$1" }
+	  ],
+	"env": {
+		"NOW_API_TKN": "@now-api-tkn"
+	}
+}

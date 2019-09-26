@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Dynger</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <h1>Welcome to Dynger</h1>
+  <h2>
+    <section>It's Your personal DDNS Service</section>
+    Deployed with
+    <a href="https://zeit.co/docs" target="_blank" rel="noreferrer noopener">ZEIT Now</a>!
+  
+  </h2>
+  <p>Currently under construction...</p>
+  <br />
+  <h3>Your are visiting from:</h3>
+  <pre>
+      <code class="json">
+        <div id="ip">Loading results...</div>
+      </code>
+    </pre>
+  <script>
+    function main() {
+      return fetch('/api/greet.go')
+        .then(function (response) {
+          return response.text();
+        })
+        .then(function (results) {
+          document.querySelector('#ip').textContent = results;
+        });
+    }
+    main();
+  </script>
+</body>
+
+</html>
