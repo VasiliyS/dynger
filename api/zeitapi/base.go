@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -23,13 +24,27 @@ type zeitRequest struct {
 	r *http.Request
 }
 
-// Zeit retruns JSON messages that are structured as:
+// zeitError captures errors returned by Zeit DNS API
+// Zeit returns JSON messages that are structured as:
 //   { "error" : { "code":"xxx", "message" : "msg..", "another api specific key":"vvv", "key2":"vvv", ..}}
 type zeitError struct {
-	Error struct {
-		Code string `json:"code"`
-		Msg  string `json:"message"`
-	} `json:"error"`
+	Code string `json:"code"`
+	Msg  string `json:"message"`
+}
+
+// Error handles ZeitAPI errors and implements Error Interface
+// It doesn't wrap lower level errors
+type Error struct {
+	// ZeitError field will containe unmarshalled messaged returned by Zeit DNS API
+	ZeitErr zeitError `json:"error"`
+}
+
+func (e Error) Error() string {
+	if e.ZeitErr.Code == "" {
+		return "Zeit API : No Error Code"
+	}
+	return fmt.Sprintf("Zeit API Error Code: %s , Message: %s", e.ZeitErr.Code, e.ZeitErr.Msg)
+
 }
 
 var (
@@ -75,11 +90,13 @@ func (d *dnsAPIBase) newDNSReqJSON(method, domain string, payload interface{}) (
 	if err != nil {
 		return nil, err
 	}
+	// TODO: handle possible err here
 	req, err := d.newDNSReq(method, domain, bytes.NewBuffer(body))
 	req.r.Header.Add("Content-Type", "application/json")
 	return req, nil
 }
 
+// Do wraps around lower level http.Do method. It'll return zeitapi.Error, if one is available
 func (zr *zeitRequest) Do() (body []byte, err error) {
 	client := &http.Client{}
 	zr.r.Header.Add("Authorization", "Bearer "+zeitAPI.Token)
@@ -95,20 +112,22 @@ func (zr *zeitRequest) Do() (body []byte, err error) {
 	body = make([]byte, resp.ContentLength)
 	resp.Body.Read(body)
 	//handle error response from Zeit API
-	var rj zeitError
+	var rj Error
 	// TODO: consider using string based JSON processing to speed-up error handling
 	err = json.Unmarshal(body, &rj)
 	if err != nil {
-		log.Fatalf("Zeit API request processing error: can't decode json from response %s , %s", body, err)
+		log.Fatalf("Zeit API Lib error: can't decode json from response %s , %s", body, err)
 	}
 
-	if rj.Error.Code != "" {
-		return nil, fmt.Errorf("Zeit API error %s", rj.Error.Msg)
+	if rj.ZeitErr.Code != "" {
+		return nil, rj
 	}
 	return body, nil
 
 }
 
+// findRecordInResp will return RecordID  of the record, if found
+// it'll, however, return **false**, if the **recValue** is the same as the existing record
 func findRecordInResp(resp []byte, recType, recName, recValue string) (string, bool) {
 	var result struct {
 		Records []struct {
@@ -155,40 +174,49 @@ func (d *dnsAPIBase) GetRecordsFor(domain string) ([]byte, error) {
 	return body, nil
 }
 
-func (d *dnsAPIBase) UpdateRecord(tld, recType, recName, recValue string) error {
+// UpdateRecord will add new record and return true.
+//  An exiting record will be updated if the value is new, return true.
+//  If the value is the same, it'll return false.
+//  Err will either be an error or zeitapi.Error.
+func (d *dnsAPIBase) UpdateRecord(tld, recType, recName, recValue string) (bool, error) {
+
 	resp, err := d.GetRecordsFor(tld)
 	if err != nil {
-		return fmt.Errorf("Can't update domain: %w", err)
+		return false, fmt.Errorf("Can't update domain: %w", err)
 	}
-
-	recID, ok := findRecordInResp(resp, recType, recName, recValue)
-	//delete, if it does
-	if ok {
+	// find the record in the response
+	recID, isFound := findRecordInResp(resp, recType, recName, recValue)
+	if isFound { // exists and the value is new
 		err = d.DeleteRecord(tld, recID)
 		if err != nil {
-			return fmt.Errorf("Can't update DNS record: %q : %w", recID, err)
+			return false, fmt.Errorf("Can't update DNS record: %q : %w", recID, err)
 		}
+	} else if recID != "" {
+		return false, nil // record found, but the value is the same
 	}
 	err = d.AddRecord(tld, recName, recType, recValue)
 	if err != nil {
-		return fmt.Errorf("Can't set record %q : %q for %q : %w", recType, recValue, tld, err)
+		return false, fmt.Errorf("Can't set record %q : %q for %q : %w", recType, recValue, tld, err)
 	}
-
-	return nil
+	// either completely new record or existing with a new value
+	return true, nil
 }
 
-func (d *dnsAPIBase) SetAddressTo(strFQDN string, ipAddr string) error {
+// SetAddressTo will set new IP Address, if it's changed and return true.
+// New record will be created, if needed
+func (d *dnsAPIBase) SetAddressTo(strFQDN string, ipAddr net.IP) (bool, error) {
 	//get the lowest level domain
 	i := strings.IndexByte(strFQDN, '.')
 	if i < 0 {
-		return fmt.Errorf("incorrect domain name supplied: %q", strFQDN)
+		return false, fmt.Errorf("incorrect domain name supplied: %q", strFQDN)
 	}
 	lld := strFQDN[:i]
-	//check if it exisits
 	tld := strFQDN[i+1:]
 
-	//TODO: IPV6, "AAAA" records ...
-	return d.UpdateRecord(tld, "A", lld, ipAddr)
+	// TODO: IPV6, "AAAA" records ...
+	// ipAddr len will be 4 bytes for IPv4 and 16 bytes for Ipv6
+	// will need to check for both?
+	return d.UpdateRecord(tld, "A", lld, ipAddr.String())
 }
 
 func (d *dnsAPIBase) AddRecord(domain, child, recType, value string) error {

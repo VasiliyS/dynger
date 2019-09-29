@@ -100,7 +100,8 @@ func TestZeitAPIBasics(t *testing.T) {
 	var recToDeleteID string
 
 	t.Run("UpdateRecord", func(t *testing.T) {
-		got := DNS.UpdateRecord(testDomain, "TXT", "zeitTest", "12345TestNew")
+		// TODO: check the bool value
+		_, got := DNS.UpdateRecord(testDomain, "TXT", "zeitTest", "12345TestNew")
 		if got != nil {
 			t.Errorf("UpdateRecord() coudn't update test record %v", got)
 		}

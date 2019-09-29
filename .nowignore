@@ -1,4 +1,4 @@
 tools
-README.md
+*.md
 .env
 api/**/*_test.go
