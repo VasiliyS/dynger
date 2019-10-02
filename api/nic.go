@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -27,16 +30,24 @@ const (
 	dynDNSIPParam   = "myip"
 )
 
+func init() {
+	// setup logging parameters
+	// TODO: set debug level from environment variable
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+}
+
 // HandleNIC responds to /nic/update
 func HandleNIC(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Basic ") {
-		log.Printf("Invalid authorization Header: %q", auth)
+		log.Warn().Str("header", auth).Msg("Invalid authorization Header")
 		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm=%q`, realm))
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}
-	log.Printf("Received request: %q , from: %q", r.URL, r.RemoteAddr)
+	log.Debug().Str("method", r.Method).Str("url", r.URL.String()).Str("addr", r.RemoteAddr).Send()
 
 	// Prepare response
 	respB := bytes.NewBuffer(nil)
@@ -49,7 +60,7 @@ func HandleNIC(w http.ResponseWriter, r *http.Request) {
 
 	if usr, psw, ok := r.BasicAuth(); ok {
 		// TODO: verify login info
-		log.Printf("\n User: %s, Password: %s ", usr, psw)
+		log.Debug().Str("user", usr).Str("pswrd", psw).Send()
 	} else {
 		// TODO: log the event
 		respB.WriteString(dynDNSStatusBadAuth)
@@ -58,33 +69,34 @@ func HandleNIC(w http.ResponseWriter, r *http.Request) {
 	//get URL Query parameters
 	q := r.URL.Query()
 	//check IP
-	ip := net.ParseIP(q[dynDNSIPParam][0])
+	myip := q[dynDNSIPParam][0]
+	ip := net.ParseIP(myip)
 	if ip == nil {
-		// TODO: Log this
+		log.Warn().Str("myip", myip).Str("remote IP", r.RemoteAddr).Msg("Couldn't parse 'myip' parameter, using remote ip")
 		ip = net.ParseIP(r.RemoteAddr)
 	}
 	// TODO: log if new ip is not the same as the address of the sender
 	domain := q[dynDNSHostParam][0]
 	if err := checkDomain(domain); err != nil {
 		respB.WriteString(dynDNSStatusNotFQDN)
-		// TODO: log the error
+		log.Error().Err(err).Msg("Bad 'hostname' supplied")
 		return
 	}
 	isNew, err := zeitapi.DNS.SetAddressTo(domain, ip)
 	if err != nil {
 		respB.WriteString(dynDNSStatus911)
-		// TODO: log error
+		log.Error().Err(err).Msg("Address is not set!")
 		return
 	}
 	if !isNew {
-		// TODO: log warning
+		log.Warn().Msg("Update request was using the existing address, request ignored.")
 		// TODO: track timer to panish updates for the same value ??
 		writeStringsToB(respB, dynDNSStatusNochng, ip.String())
 		return
 	}
 	// Everything went well!
 	writeStringsToB(respB, dynDNSStatusGoog, ip.String())
-	// TODO: log event
+	log.Info().Str("hostname", domain).Str("myip", ip.String()).Msg("Update successul!")
 }
 
 // ------- helper functions --------
