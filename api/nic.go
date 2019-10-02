@@ -69,14 +69,14 @@ func HandleNIC(w http.ResponseWriter, r *http.Request) {
 	//get URL Query parameters
 	q := r.URL.Query()
 	//check IP
-	myip := q[dynDNSIPParam][0]
+	myip := q.Get(dynDNSIPParam)
 	ip := net.ParseIP(myip)
 	if ip == nil {
 		log.Warn().Str("myip", myip).Str("remote IP", r.RemoteAddr).Msg("Couldn't parse 'myip' parameter, using remote ip")
 		ip = net.ParseIP(r.RemoteAddr)
 	}
 	// TODO: log if new ip is not the same as the address of the sender
-	domain := q[dynDNSHostParam][0]
+	domain := q.Get(dynDNSHostParam)
 	if err := checkDomain(domain); err != nil {
 		respB.WriteString(dynDNSStatusNotFQDN)
 		log.Error().Err(err).Msg("Bad 'hostname' supplied")
@@ -126,7 +126,7 @@ func prettyPrint(v interface{}) (err error) {
 func checkDomain(name string) error {
 	switch {
 	case len(name) == 0:
-		return nil // an empty domain name will result in a cookie without a domain restriction
+		return fmt.Errorf("domain: empty domain name supplied")
 	case len(name) > 255:
 		return fmt.Errorf(" domain: name length is %d, can't exceed 255", len(name))
 	}
