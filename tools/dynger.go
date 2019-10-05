@@ -145,13 +145,13 @@ func main() {
 	var bPin []byte //will store bytes of the enetered or generated PIN
 
 	if *sPin == "" {
-		tPin := make([]byte, RandBytesLen)
+		rPin := make([]byte, RandBytesLen)
 		_, err := rand.Read(tPin)
 		if err != nil {
 			log.Fatal("Couldn't generate random PIN!")
 		}
-		bPin = tPin
-		fmt.Printf("Using randomly generated PIN: %#x", tPin)
+		bPin = rPin
+		fmt.Printf("Using randomly generated PIN: %#x", rPin)
 	} else {
 		fmt.Println("... with PIN: ", *sPin)
 		bPin = []byte(*sPin)
@@ -162,16 +162,16 @@ func main() {
 		log.Fatalf("Couldn't create Argon2 key : %w ", err)
 	}
 	key.GenKey(bPin)
-	fmt.Printf("\nGenerated token (URLBase64): %s\n", key.StringB64(b64.RawURLEncoding))
-	fmt.Printf("\nGenerated token with salt  (URLBase64): %s\n", key.SaltedStringB64(b64.RawURLEncoding, '$'))
+	fmt.Printf("\nGenerated master key (URLBase64): %s\n", key.StringB64(b64.RawURLEncoding))
+	fmt.Printf("\nGenerated master key with salt  (URLBase64): %s\n", key.SaltedStringB64(b64.RawURLEncoding, '$'))
 
 	if *sPin != "" && *sCred != "" {
 		password, _ := NewB2BDigest(DigestSize, key.Bytes())
 		sepInd := strings.IndexByte(*sCred, ':')
-		if sepInd == -1 || sepInd == len(*sCred)-1 {
-			log.Fatalf("-cred parameter should be 'user:domain', received: %q", *sCred)
+		if sepInd == -1 || sepInd == len(*sCred)-1 || sepInd == 0 {
+			log.Fatalf("-cred's parameter should be 'user:domain', received: %q", *sCred)
 		}
-		b64P, _ := password.ToB64(key.Bytes())
+		b64P, _ := password.ToB64([]byte(*sCred))
 		usr := (*sCred)[:sepInd]
 		domain := (*sCred)[sepInd+1:]
 		fmt.Printf("\nURL Encoded Password for User %q and Domain %q is : %s", usr, domain, b64P)

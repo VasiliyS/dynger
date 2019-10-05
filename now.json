@@ -13,6 +13,7 @@
 		{ "src": "/(.*)", "dest": "www/$1" }
 	  ],
 	"env": {
-		"NOW_API_TKN": "@now-api-tkn"
+		"NOW_API_TKN": "@now-api-tkn",
+		"DYN_MASTER_SECRET": "@dyn-master-secret"
 	}
 }
